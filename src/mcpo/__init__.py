@@ -18,6 +18,14 @@ def main(
     port: Annotated[
         Optional[int], typer.Option("--port", "-p", help="Port number")
     ] = 8000,
+    cors_allow_origins: Annotated[
+        Optional[List[str]],
+        typer.Option("--cors-allow-origins", help="CORS allowed origins"),
+    ] = ["*"],
+    api_key: Annotated[
+        Optional[str],
+        typer.Option("--api-key", "-k", help="API key for authentication"),
+    ] = None,
     env: Annotated[
         Optional[List[str]], typer.Option("--env", "-e", help="Environment variables")
     ] = None,
@@ -32,6 +40,12 @@ def main(
     ] = None,
     version: Annotated[
         Optional[str], typer.Option("--version", "-v", help="Server version")
+    ] = None,
+    ssl_certfile: Annotated[
+        Optional[str], typer.Option("--ssl-certfile", "-t", help="SSL certfile")
+    ] = None,
+    ssl_keyfile: Annotated[
+        Optional[str], typer.Option("--ssl-keyfile", "-k",  help="SSL keyfile")
     ] = None,
 ):
     server_command = None
@@ -72,11 +86,15 @@ def main(
         run(
             host,
             port,
+            api_key=api_key,
+            cors_allow_origins=cors_allow_origins,
             config=config,
             name=name,
             description=description,
             version=version,
             server_command=server_command,
+            ssl_certfile=ssl_certfile,
+            ssl_keyfile=ssl_keyfile,
         )
     )
 

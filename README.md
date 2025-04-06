@@ -30,23 +30,25 @@ mcpo makes your AI tools usable, secure, and interoperable—right now, with zer
 We recommend using uv for lightning-fast startup and zero config.
 
 ```bash
-uvx mcpo --port 8000 -- your_mcp_server_command
+uvx mcpo --port 8000 --api-key "top-secret" -- your_mcp_server_command
 ```
 
 Or, if you’re using Python:
 
 ```bash
 pip install mcpo
-mcpo --port 8000 -- your_mcp_server_command
+mcpo --port 8000 --api-key "top-secret" -- your_mcp_server_command
 ```
 
 Example:
 
 ```bash
-uvx mcpo --port 8000 -- uvx mcp-server-time --local-timezone=America/New_York
+uvx mcpo --port 8000 --api-key "top-secret" -- uvx mcp-server-time --local-timezone=America/New_York
 ```
 
 That’s it. Your MCP tool is now available at http://localhost:8000 with a generated OpenAPI schema — test it live at [http://localhost:8000/docs](http://localhost:8000/docs).
+
+🤝 **To integrate with Open WebUI after launching the server, check our [docs](https://docs.openwebui.com/openapi-servers/open-webui/).**
 
 ### 🔄 Using a Config File
 
@@ -89,3 +91,20 @@ Each with a dedicated OpenAPI schema and proxy handler. Access full schema UI at
 ## 🪪 License
 
 MIT
+
+## 🤝 Contributing
+
+We welcome and strongly encourage contributions from the community!
+
+Whether you're fixing a bug, adding features, improving documentation, or just sharing ideas—your input is incredibly valuable and helps make mcpo better for everyone.
+
+Getting started is easy:
+
+- Fork the repo
+- Create a new branch
+- Make your changes
+- Open a pull request
+
+Not sure where to start? Feel free to open an issue or ask a question—we’re happy to help you find a good first task.
+
+✨ Let's build the future of interoperable AI tooling together!

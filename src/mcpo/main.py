@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Body
+from fastapi import FastAPI, Body, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.routing import Mount
 from pydantic import create_model
@@ -7,10 +7,12 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 
-from typing import Dict, Any, Callable
+from typing import Dict, Any, Optional
 import uvicorn
 import json
 import os
+
+from mcpo.utils.auth import get_verify_api_key
 
 
 def get_python_type(param_type: str):
@@ -31,7 +33,7 @@ def get_python_type(param_type: str):
     # Expand as needed. PRs welcome!
 
 
-async def create_dynamic_endpoints(app: FastAPI):
+async def create_dynamic_endpoints(app: FastAPI, api_dependency=None):
     session = app.state.session
     if not session:
         raise ValueError("Session is not initialized in the app state.")
@@ -75,13 +77,22 @@ async def create_dynamic_endpoints(app: FastAPI):
                 result = await session.call_tool(endpoint_name, arguments=args)
                 response = []
                 for content in result.content:
-                    text = content.text
-                    if isinstance(text, str):
-                        try:
-                            text = json.loads(text)
-                        except json.JSONDecodeError:
-                            pass
-                    response.append(text)
+                    if isinstance(content, types.TextContent):
+                        text = content.text
+                        if isinstance(text, str):
+                            try:
+                                text = json.loads(text)
+                            except json.JSONDecodeError:
+                                pass
+                        response.append(text)
+                    elif isinstance(content, types.ImageContent):
+                        image_data = content.data
+                        image_data = f"data:{content.mimeType};base64,{image_data}"
+                        response.append(image_data)
+                    elif isinstance(content, types.EmbeddedResource):
+                        # TODO: Handle embedded resources
+                        response.append("Embedded resource not supported yet.")
+
                 return response
 
             return tool_endpoint
@@ -92,6 +103,7 @@ async def create_dynamic_endpoints(app: FastAPI):
             f"/{endpoint_name}",
             summary=endpoint_name.replace("_", " ").title(),
             description=endpoint_description,
+            dependencies=[Depends(api_dependency)] if api_dependency else [],
         )(tool)
 
 
@@ -100,6 +112,8 @@ async def lifespan(app: FastAPI):
     command = getattr(app.state, "command", None)
     args = getattr(app.state, "args", [])
     env = getattr(app.state, "env", {})
+
+    api_dependency = getattr(app.state, "api_dependency", None)
 
     if not command:
         async with AsyncExitStack() as stack:
@@ -120,11 +134,22 @@ async def lifespan(app: FastAPI):
         async with stdio_client(server_params) as (reader, writer):
             async with ClientSession(reader, writer) as session:
                 app.state.session = session
-                await create_dynamic_endpoints(app)
+                await create_dynamic_endpoints(app, api_dependency=api_dependency)
                 yield
 
 
-async def run(host: str = "127.0.0.1", port: int = 8000, **kwargs):
+async def run(
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    api_key: Optional[str] = "",
+    cors_allow_origins=["*"],
+    **kwargs,
+):
+
+    # Server API Key
+    api_dependency = get_verify_api_key(api_key) if api_key else None
+
+    # MCP Config
     config_path = kwargs.get("config")
     server_command = kwargs.get("server_command")
     name = kwargs.get("name") or "MCP OpenAPI Proxy"
@@ -132,23 +157,28 @@ async def run(host: str = "127.0.0.1", port: int = 8000, **kwargs):
         kwargs.get("description") or "Automatically generated API from MCP Tool Schemas"
     )
     version = kwargs.get("version") or "1.0"
+    ssl_certfile = kwargs.get("ssl_certfile")
+    ssl_keyfile= kwargs.get("ssl_keyfile")
 
     main_app = FastAPI(
-        title=name, description=description, version=version, lifespan=lifespan
+        title=name, description=description, version=version, ssl_certfile=ssl_certfile, ssl_keyfile=ssl_keyfile, lifespan=lifespan
     )
 
     main_app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_allow_origins or ["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     if server_command:
+
         main_app.state.command = server_command[0]
         main_app.state.args = server_command[1:]
         main_app.state.env = os.environ.copy()
+
+        main_app.state.api_dependency = api_dependency
     elif config_path:
         with open(config_path, "r") as f:
             config_data = json.load(f)
@@ -167,7 +197,7 @@ async def run(host: str = "127.0.0.1", port: int = 8000, **kwargs):
 
             sub_app.add_middleware(
                 CORSMiddleware,
-                allow_origins=["*"],
+                allow_origins=cors_allow_origins or ["*"],
                 allow_credentials=True,
                 allow_methods=["*"],
                 allow_headers=["*"],
@@ -177,12 +207,14 @@ async def run(host: str = "127.0.0.1", port: int = 8000, **kwargs):
             sub_app.state.args = server_cfg.get("args", [])
             sub_app.state.env = {**os.environ, **server_cfg.get("env", {})}
 
+            sub_app.state.api_dependency = api_dependency
+
             main_app.mount(f"/{server_name}", sub_app)
 
     else:
         raise ValueError("You must provide either server_command or config.")
 
-    config = uvicorn.Config(app=main_app, host=host, port=port, log_level="info")
+    config = uvicorn.Config(app=main_app, host=host, port=port, ssl_certfile=ssl_certfile , ssl_keyfile=ssl_keyfile ,log_level="info")
     server = uvicorn.Server(config)
 
     await server.serve()
